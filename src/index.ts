@@ -58,7 +58,15 @@ async function main() {
         messages: [
             {
                 role: 'user',
-                content: 'Analyze button.component.html',
+                content: `
+Analyze the file with this EXACT path:
+button.component.ts
+
+Pass exactly "button.component.ts" to read_project_file.
+Do not prepend src/app or examples/angular-demo.
+Follow the project style guide.
+Report file, line, severity, problem and suggestion.
+`
             },
         ],
     });
