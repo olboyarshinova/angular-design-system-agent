@@ -7,6 +7,7 @@ import {ReviewSchema, type Review} from './report-schema.js';
 import {checkDesignTokens} from './tools/check-design-tokens.js';
 import {findUiComponents} from './tools/find-ui-components.js';
 import {validateReview} from './validate-review.js';
+import {analyzeTypeScript} from './analyzers/typescript-analyzer.js';
 
 const extensions = new Set(['.ts', '.html', '.scss']);
 
@@ -125,6 +126,8 @@ Rules:
 - Do not report elements, APIs or patterns absent from the file.
 - Do not report style preferences as defects unless required by the style guide.
 - Prefer fewer accurate findings over speculative findings.
+- Explicit TypeScript any types are checked by a static analyzer.
+- Do not report explicit any usage yourself.
         `,
     });
 
@@ -137,6 +140,10 @@ Rules:
             .map((line, index) => `${index + 1} | ${line}`)
             .join('\n');
         const relativePath = path.relative(projectPath, file);
+
+        if (file.endsWith('.ts')) {
+            allIssues.push(...analyzeTypeScript(relativePath, source));
+        }
 
         console.log(`Analyzing ${relativePath}...`);
 
