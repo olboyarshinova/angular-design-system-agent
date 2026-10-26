@@ -4,10 +4,9 @@ import path from 'node:path';
 import {createAgent} from 'langchain';
 import {ChatOpenAI} from '@langchain/openai';
 import {ReviewSchema, type Review} from './report-schema.js';
-import {checkDesignTokens} from './tools/check-design-tokens.js';
-import {findUiComponents} from './tools/find-ui-components.js';
 import {validateReview} from './validate-review.js';
 import {analyzeTypeScript} from './analyzers/typescript-analyzer.js';
+import {createProjectTools} from './tools/project-tools.js';
 
 const extensions = new Set(['.ts', '.html', '.scss']);
 
@@ -22,7 +21,17 @@ async function findFiles(dir: string): Promise<string[]> {
     const files: string[] = [];
 
     for (const entry of entries) {
-        if (entry.name === 'node_modules' || entry.name === 'dist') {
+        const excludedDirs = new Set([
+            'node_modules',
+            'dist',
+            '.angular',
+            '.git',
+            '.angular-review',
+            'coverage',
+            'reports',
+        ]);
+
+        if (entry.isDirectory() && excludedDirs.has(entry.name)) {
             continue;
         }
 
@@ -70,29 +79,61 @@ function toMarkdown(issues: Review['issues']): string {
     return lines.join('\n');
 }
 
+function getMaxIssues(): number | undefined {
+    const index = process.argv.indexOf('--max-issues');
+
+    if (index === -1) {
+        return undefined;
+    }
+
+    const value = process.argv[index + 1];
+    const maxIssues = Number(value);
+
+    if (!value || !Number.isSafeInteger(maxIssues) || maxIssues <= 0) {
+        throw new Error('--max-issues must be a positive integer');
+    }
+
+    return maxIssues;
+}
+
+function getPositiveIntegerOption(name: string): number | undefined {
+    const index = process.argv.indexOf(name);
+
+    if (index === -1) {
+        return undefined;
+    }
+
+    const value = process.argv[index + 1];
+    const number = Number(value);
+
+    if (!value || !Number.isSafeInteger(number) || number <= 0) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+
+    return number;
+}
+
 async function main(): Promise<void> {
     const projectPath = path.resolve(
         process.argv[2] ?? './examples/angular-demo'
     );
-    const files = await findFiles(projectPath);
+    const maxFiles = getPositiveIntegerOption('--max-files');
+    const files = (await findFiles(projectPath))
+        .sort()
+        .slice(0, maxFiles);
     const styleGuide = await readFile(
         './config/style-guide.md',
         'utf-8'
     );
+    const projectTools = await createProjectTools(projectPath);
     const agent = createAgent({
         model: new ChatOpenAI({
             model: 'gpt-4.1-mini',
             temperature: 0,
             maxTokens: 1000,
         }),
-
         responseFormat: ReviewSchema,
-
-        tools: [
-            checkDesignTokens,
-            findUiComponents,
-        ],
-
+        tools: projectTools,
         systemPrompt: `
 You are a senior Angular code reviewer.
 
@@ -107,7 +148,9 @@ Review:
 - UI kit and design tokens
 - Accessibility
 
-Use tools for HTML and SCSS analysis.
+Use available project tools for HTML and SCSS analysis.
+If no project tools are available, do not invent UI kit components
+or design token names.
 For TypeScript, analyze the provided source code.
 
 Return a structured report.
@@ -131,6 +174,9 @@ The static analyzer checks:
 - Missing OnPush configuration
 - Direct interval().subscribe() calls without visible cleanup
 
+Return at most 5 highest-priority issues per file.
+Keep each problem and suggestion under 100 characters.
+
 Do not duplicate these findings.
         `,
     });
@@ -151,9 +197,9 @@ Do not duplicate these findings.
 
         console.log(`Analyzing ${relativePath}...`);
 
-        const result = await agent.invoke({
-            messages: [
-                {
+        try {
+            const result = await agent.invoke({
+                messages: [{
                     role: 'user',
                     content: `
 Review file: ${relativePath}
@@ -162,24 +208,25 @@ Source code with original line numbers:
 ${numberedSource}
 
 Use only the line numbers shown before "|".
-For each issue, reference the line containing
-the problematic code, not the surrounding block.
 If the exact line is uncertain, return null.
-                    `,
-                },
-            ],
-        });
+            `,
+                }],
+            });
 
-        const report = ReviewSchema.parse(
-            result.structuredResponse
-        );
+            const report = ReviewSchema.parse(result.structuredResponse);
 
-        allIssues.push(
-            ...report.issues.map(issue => ({
-                ...issue,
-                file: relativePath,
-            }))
-        );
+            allIssues.push(
+                ...report.issues.map(issue => ({
+                    ...issue,
+                    file: relativePath,
+                }))
+            );
+        } catch (error) {
+            console.error(
+                `Failed to analyze ${relativePath}:`,
+                error instanceof Error ? error.message : error
+            );
+        }
     }
 
     const validatedIssues = await validateReview(
@@ -191,15 +238,20 @@ If the exact line is uncertain, return null.
         (a, b) => priority[a.severity] - priority[b.severity]
     );
 
+    const maxIssues = getPositiveIntegerOption('--max-issues');
+    const finalIssues = maxIssues
+        ? validatedIssues.slice(0, maxIssues)
+        : validatedIssues;
+
     await mkdir('reports', {recursive: true});
 
     await writeFile(
         'reports/review.json',
-        JSON.stringify({issues: validatedIssues}, null, 2),
+        JSON.stringify({issues: finalIssues}, null, 2),
         'utf-8'
     );
 
-    const markdown = toMarkdown(validatedIssues);
+    const markdown = toMarkdown(finalIssues);
 
     await writeFile(
         'reports/review.md',
