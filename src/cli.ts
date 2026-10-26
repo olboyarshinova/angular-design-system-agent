@@ -126,8 +126,12 @@ Rules:
 - Do not report elements, APIs or patterns absent from the file.
 - Do not report style preferences as defects unless required by the style guide.
 - Prefer fewer accurate findings over speculative findings.
-- Explicit TypeScript any types are checked by a static analyzer.
-- Do not report explicit any usage yourself.
+The static analyzer checks:
+- Explicit any types
+- Missing OnPush configuration
+- Direct interval().subscribe() calls without visible cleanup
+
+Do not duplicate these findings.
         `,
     });
 
