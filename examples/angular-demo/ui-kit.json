@@ -1,0 +1,16 @@
+{
+  "components": [
+    {
+      "name": "Button",
+      "selector": "app-button",
+      "replaces": "button",
+      "example": "<app-button variant=\"primary\">Save</app-button>"
+    },
+    {
+      "name": "Input",
+      "selector": "app-input",
+      "replaces": "input",
+      "example": "<app-input label=\"Email\" />"
+    }
+  ]
+}

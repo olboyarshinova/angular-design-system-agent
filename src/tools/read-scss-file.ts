@@ -9,6 +9,7 @@ export const readScssFile = tool(
     async ({filePath}) => {
         const root = await realpath(projectRoot);
         const target = await realpath(path.resolve(root, filePath));
+
         const relative = path.relative(root, target);
 
         if (
@@ -19,18 +20,23 @@ export const readScssFile = tool(
             throw new Error('Access outside project directory is forbidden');
         }
 
-        if (path.extname(target) !== '.scss') {
-            throw new Error('Only SCSS files are allowed');
+        const allowedExtensions = ['.ts', '.html', '.scss'];
+
+        if (!allowedExtensions.includes(path.extname(target))) {
+            throw new Error('Only TS, HTML and SCSS files are allowed');
         }
 
         return readFile(target, 'utf-8');
     },
     {
-        name: 'read_scss_file',
-        description: 'Read an SCSS file from the Angular demo project.',
+        name: 'read_project_file',
+        description:
+            'Read Angular TypeScript, HTML and SCSS files. ' +
+            'The project root is examples/angular-demo. ' +
+            'Pass paths relative to this root, e.g. button.component.html.',
         schema: z.object({
             filePath: z.string().describe(
-                'Relative path to an SCSS file inside the project'
+                'Relative path to an existing TS, HTML or SCSS file'
             ),
         }),
     }
