@@ -1,21 +1,24 @@
 import {tool} from '@langchain/core/tools';
 import {z} from 'zod';
+import {readFile} from 'node:fs/promises';
 
-const tokens = {
-    colors: {
-        primary: '#2563eb',
-        danger: '#dc2626',
-        text: '#111827',
-    },
-    spacing: {
-        sm: '8px',
-        md: '16px',
-        lg: '24px',
-    },
+type DesignTokens = {
+    colors: Record<string, string>;
+    spacing: Record<string, string>;
 };
+
+async function loadTokens(): Promise<DesignTokens> {
+    const content = await readFile(
+        './examples/angular-demo/design-tokens.json',
+        'utf-8',
+    );
+
+    return JSON.parse(content) as DesignTokens;
+}
 
 export const checkDesignTokens = tool(
     async ({scss}) => {
+        const tokens = await loadTokens();
         const issues: string[] = [];
 
         scss.split('\n').forEach((line, index) => {
