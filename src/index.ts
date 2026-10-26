@@ -1,56 +1,36 @@
 import 'dotenv/config';
-import {ChatOpenAI} from '@langchain/openai';
-import {ToolMessage} from '@langchain/core/messages';
-import {checkDesignTokens} from './tools/check-design-tokens.js';
+import { createAgent } from 'langchain';
+import { ChatOpenAI } from '@langchain/openai';
+import { readScssFile } from './tools/read-scss-file.js';
+import { checkDesignTokens } from './tools/check-design-tokens.js';
 
-const model = new ChatOpenAI({
-    model: 'gpt-4.1-mini',
-    temperature: 0,
-    maxTokens: 200,
+const agent = createAgent({
+    model: new ChatOpenAI({
+        model: 'gpt-4.1-mini',
+        temperature: 0,
+        maxTokens: 400,
+    }),
+    tools: [readScssFile, checkDesignTokens],
+    systemPrompt: `
+You are an Angular design system assistant.
+Always read the requested file using read_scss_file.
+Then analyze its content using check_design_tokens.
+Report only detected issues.
+Be concise. Do not invent design tokens.
+    `,
 });
-const tools = [checkDesignTokens];
-const modelWithTools = model.bindTools(tools);
 
 async function main() {
-    const scss = `
-.button {
-    background: #2563eb;
-    padding: 13px;
-    border-radius: 7px;
-}`;
-    const messages = [
-        {
-            role: 'system' as const,
-            content: `You are an Angular design system assistant.
-Always use tools to analyze code.
-Report only detected issues.
-Keep responses concise.`,
-        },
-        {
-            role: 'user' as const,
-            content: `Check this SCSS:\n${scss}`,
-        },
-    ];
+    const result = await agent.invoke({
+        messages: [
+            {
+                role: 'user',
+                content: 'Analyze button.component.scss',
+            },
+        ],
+    });
 
-    const response = await modelWithTools.invoke(messages);
-    const history = [...messages, response];
-
-    for (const toolCall of response.tool_calls ?? []) {
-        if (toolCall.name === 'check_design_tokens') {
-            const result = await checkDesignTokens.invoke(toolCall.args);
-
-            history.push(
-                new ToolMessage({
-                    content: result,
-                    tool_call_id: toolCall.id!,
-                }),
-            );
-        }
-    }
-
-    const finalResponse = await modelWithTools.invoke(history);
-
-    console.log(finalResponse.content);
+    console.log(result.messages.at(-1)?.content);
 }
 
 main().catch(console.error);
